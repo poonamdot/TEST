@@ -1,12 +1,11 @@
 # ==========================================================
-# COMPLETE DEPLOY + AUTO-SCALE SCRIPT (STABLE VERSION)
+# COMPLETE DEPLOY + AUTO-SCALE SCRIPT (FIXED VERSION)
 # ==========================================================
 
 # ---------------- CONFIGURATION ----------------
 $ResourceGroup = "poonam"
 $PrimaryVM     = "azure"
 $Location      = "CentralIndia"
-$ImageName     = "myCustomImage"
 
 $AdminUser     = "automation"
 $AdminPassword = "Poonam@17123"
@@ -30,14 +29,14 @@ git push
 Write-Host "Local push completed."
 
 
-# ================= STEP 2: ENSURE GIT EXISTS ON VM =================
+# ================= STEP 2: VERIFY GIT ON PRIMARY VM =================
 Write-Host "STEP 2 - VERIFY GIT ON PRIMARY VM"
 
 $RemoteScript = @"
 `$GitPath = '$GitExe'
 
 if (Test-Path `$GitPath) {
-    Write-Host "Git exists at `$GitPath"
+    Write-Host "Git exists."
 }
 else {
     Write-Host "Git not found. Installing..."
@@ -45,7 +44,6 @@ else {
     `$Installer = 'C:\git_installer.exe'
     Invoke-WebRequest -Uri 'https://github.com/git-for-windows/git/releases/latest/download/Git-64-bit.exe' -OutFile `$Installer
     Start-Process `$Installer -ArgumentList '/VERYSILENT' -Wait
-    Write-Host "Git installed."
 }
 "@
 
@@ -70,13 +68,11 @@ if (!(Test-Path `$RepoPath)) {
 
 if (!(Test-Path (Join-Path `$RepoPath '.git'))) {
     & `$GitPath clone `$RepoUrl `$RepoPath
-    Write-Host 'Repository cloned.'
 }
 else {
     Set-Location `$RepoPath
     & `$GitPath reset --hard
     & `$GitPath pull
-    Write-Host 'Repository updated.'
 }
 "@
 
@@ -97,7 +93,6 @@ $CPUResult = az vm run-command invoke `
   --scripts "((Get-Counter '\Processor(_Total)\% Processor Time').CounterSamples.CookedValue)" `
   --query "value[0].message" -o tsv
 
-# Clean and extract numeric value
 $CPUValue = ($CPUResult -split "`n" | Where-Object { $_ -match '\d' })[0]
 
 if ([string]::IsNullOrWhiteSpace($CPUValue)) {
@@ -110,7 +105,7 @@ else {
 Write-Host "Current CPU Usage: $CPU %"
 
 
-# ================= STEP 5: AUTO SCALE IF NEEDED =================
+# ================= STEP 5: AUTO SCALE =================
 Write-Host "STEP 5 - AUTO SCALE CHECK"
 
 if ($CPU -gt $CPUThreshold) {
@@ -119,23 +114,37 @@ if ($CPU -gt $CPUThreshold) {
 
     $NewVM = "webvm" + (Get-Random -Minimum 100 -Maximum 999)
 
-    az vm create `
+    # CREATE VM USING VALID IMAGE
+    $CreateResult = az vm create `
         --resource-group $ResourceGroup `
         --name $NewVM `
-        --image $ImageName `
+        --image Win2022Datacenter `
         --admin-username $AdminUser `
         --admin-password $AdminPassword `
         --location $Location `
-        --size Standard_DS1_v2
+        --size Standard_DS1_v2 `
+        --output json | ConvertFrom-Json
 
-    Start-Sleep -Seconds 40
+    if (!$CreateResult.name) {
+        Write-Host "VM creation failed. Stopping process."
+        return
+    }
 
-    Write-Host "Deploying application to new VM..."
+    Write-Host "VM Created Successfully: $NewVM"
 
+    # Wait for VM provisioning
+    Start-Sleep -Seconds 60
+
+    # Install Git + Deploy Repo on New VM
     $RemoteScript = @"
 `$RepoPath = '$RepoPath'
 `$RepoUrl  = '$RepoUrl'
 `$GitPath  = '$GitExe'
+
+if (!(Test-Path `$GitPath)) {
+    Invoke-WebRequest -Uri 'https://github.com/git-for-windows/git/releases/latest/download/Git-64-bit.exe' -OutFile 'C:\git.exe'
+    Start-Process 'C:\git.exe' -ArgumentList '/VERYSILENT' -Wait
+}
 
 if (!(Test-Path `$RepoPath)) {
     New-Item -ItemType Directory -Path `$RepoPath -Force | Out-Null
@@ -156,7 +165,7 @@ else {
         --command-id RunPowerShellScript `
         --scripts $RemoteScript
 
-    Write-Host "New VM created and deployed successfully."
+    Write-Host "New VM deployment completed successfully."
 }
 else {
     Write-Host "CPU below threshold. No scaling required."
