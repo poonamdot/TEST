@@ -1,5 +1,5 @@
 # ==========================================================
-# COMPLETE DEPLOY + AUTO SCALE SCRIPT (NO WINRM)
+# COMPLETE DEPLOY + AUTO-SCALE SCRIPT FOR AZURE WINDOWS VM
 # ==========================================================
 
 # ---------------- CONFIGURATION ----------------
@@ -9,10 +9,10 @@ $Location      = "CentralIndia"
 $ImageName     = "myCustomImage"
 
 $AdminUser     = "automation"
-$AdminPassword = "Poonam@17123" 
+$AdminPassword = "Poonam@17123"
 
 $RepoUrl       = "https://github.com/poonamdot/TEST.git"
-$RepoPath      = "C:\inetpub\wwwroot"
+$RepoPath      = "C:/inetpub/wwwroot"
 
 $CPUThreshold  = 20
 # ------------------------------------------------
@@ -37,11 +37,13 @@ Write-Host "STEP 2 - CHECK / INSTALL GIT ON PRIMARY VM"
 Write-Host "===================================="
 
 $RemoteScript = @'
+Write-Host "Starting Git check/install..."  # Dummy first line
+
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 if (!(Get-Command git -ErrorAction SilentlyContinue)) {
     Write-Host "Git not found. Installing..."
-    $gitInstaller = "C:\git.exe"
+    $gitInstaller = "C:/git.exe"
     Invoke-WebRequest -Uri "https://github.com/git-for-windows/git/releases/latest/download/Git-64-bit.exe" -OutFile $gitInstaller
     Start-Process $gitInstaller -ArgumentList "/VERYSILENT" -Wait
     Write-Host "Git installed."
@@ -63,10 +65,17 @@ Write-Host "STEP 3 - CLONE OR PULL REPO ON PRIMARY VM"
 Write-Host "===================================="
 
 $RemoteScript = @"
+Write-Host 'Starting repo deployment...'  # Dummy first line
+
 \$RepoPath = '$RepoPath'
 \$RepoUrl  = '$RepoUrl'
 
-if (!(Test-Path (\$RepoPath + '\.git'))) {
+if (!(Get-Command git -ErrorAction SilentlyContinue)) {
+    Write-Error 'Git is not installed.'
+    exit 1
+}
+
+if (!(Test-Path (\$RepoPath + '/.git'))) {
     git clone \$RepoUrl \$RepoPath
     Write-Host 'Repository cloned.'
 } else {
@@ -93,7 +102,7 @@ $CPUResult = az vm run-command invoke `
   --resource-group $ResourceGroup `
   --name $PrimaryVM `
   --command-id RunPowerShellScript `
-  --scripts "Get-Counter '\Processor(_Total)\% Processor Time' | Select -ExpandProperty CounterSamples | Select -ExpandProperty CookedValue" `
+  --scripts "Write-Host 'Measuring CPU usage...'; Get-Counter '\Processor(_Total)\% Processor Time' | Select -ExpandProperty CounterSamples | Select -ExpandProperty CookedValue" `
   --query "value[0].message" -o tsv
 
 $CPU = [int][math]::Round($CPUResult)
@@ -122,11 +131,13 @@ if ($CPU -gt $CPUThreshold) {
     Write-Host "New VM Created: $NewVM"
     Start-Sleep -Seconds 30
 
-    # Install Git on new VM if needed
+    # Install Git on new VM
     $RemoteScript = @'
+Write-Host "Installing Git on new VM..."  # Dummy first line
+
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 if (!(Get-Command git -ErrorAction SilentlyContinue)) {
-    $gitInstaller = "C:\git.exe"
+    $gitInstaller = "C:/git.exe"
     Invoke-WebRequest -Uri "https://github.com/git-for-windows/git/releases/latest/download/Git-64-bit.exe" -OutFile $gitInstaller
     Start-Process $gitInstaller -ArgumentList "/VERYSILENT" -Wait
 }
@@ -140,10 +151,12 @@ if (!(Get-Command git -ErrorAction SilentlyContinue)) {
 
     # Clone or pull repo on new VM
     $RemoteScript = @"
+Write-Host 'Deploying repo on new VM...'  # Dummy first line
+
 \$RepoPath = '$RepoPath'
 \$RepoUrl  = '$RepoUrl'
 
-if (!(Test-Path (\$RepoPath + '\.git'))) {
+if (!(Test-Path (\$RepoPath + '/.git'))) {
     git clone \$RepoUrl \$RepoPath
     Write-Host 'Repository cloned on new VM.'
 } else {
