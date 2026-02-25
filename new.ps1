@@ -1,5 +1,5 @@
 # ==========================================================
-# COMPLETE DEPLOY + AUTO-SCALE SCRIPT (FIXED VERSION)
+# COMPLETE DEPLOY + AUTO-SCALE SCRIPT (Standard_B2s)
 # ==========================================================
 
 # ---------------- CONFIGURATION ----------------
@@ -16,10 +16,11 @@ $RepoPath      = "C:\inetpub\wwwroot"
 $GitExe        = "C:\Program Files\Git\cmd\git.exe"
 
 $CPUThreshold  = 20
+$VMSize        = "Standard_B2s"
 # ------------------------------------------------
 
 
-# ================= STEP 1: PUSH LOCAL CODE TO GIT =================
+# ================= STEP 1: PUSH LOCAL CODE =================
 Write-Host "STEP 1 - PUSH LOCAL CODE TO GIT"
 
 git add .
@@ -54,7 +55,7 @@ az vm run-command invoke `
   --scripts $RemoteScript
 
 
-# ================= STEP 3: CLONE OR PULL REPO =================
+# ================= STEP 3: DEPLOY CODE ON PRIMARY VM =================
 Write-Host "STEP 3 - DEPLOY CODE ON PRIMARY VM"
 
 $RemoteScript = @"
@@ -114,29 +115,28 @@ if ($CPU -gt $CPUThreshold) {
 
     $NewVM = "webvm" + (Get-Random -Minimum 100 -Maximum 999)
 
-    # CREATE VM USING VALID IMAGE
-    $CreateResult = az vm create `
-        --resource-group $ResourceGroup `
-        --name $NewVM `
-        --image Win2022Datacenter `
-        --admin-username $AdminUser `
-        --admin-password $AdminPassword `
-        --location $Location `
-        --size Standard_DS1_v2 `
-        --output json | ConvertFrom-Json
+    try {
 
-    if (!$CreateResult.name) {
-        Write-Host "VM creation failed. Stopping process."
-        return
-    }
+        $CreateResult = az vm create `
+            --resource-group $ResourceGroup `
+            --name $NewVM `
+            --image Win2022Datacenter `
+            --admin-username $AdminUser `
+            --admin-password $AdminPassword `
+            --location $Location `
+            --size $VMSize `
+            --output json | ConvertFrom-Json
 
-    Write-Host "VM Created Successfully: $NewVM"
+        if (!$CreateResult.name) {
+            Write-Host "VM creation failed."
+            return
+        }
 
-    # Wait for VM provisioning
-    Start-Sleep -Seconds 60
+        Write-Host "VM Created Successfully: $NewVM"
+        Start-Sleep -Seconds 60
 
-    # Install Git + Deploy Repo on New VM
-    $RemoteScript = @"
+        # Deploy on New VM
+        $RemoteScript = @"
 `$RepoPath = '$RepoPath'
 `$RepoUrl  = '$RepoUrl'
 `$GitPath  = '$GitExe'
@@ -159,13 +159,19 @@ else {
 }
 "@
 
-    az vm run-command invoke `
-        --resource-group $ResourceGroup `
-        --name $NewVM `
-        --command-id RunPowerShellScript `
-        --scripts $RemoteScript
+        az vm run-command invoke `
+            --resource-group $ResourceGroup `
+            --name $NewVM `
+            --command-id RunPowerShellScript `
+            --scripts $RemoteScript
 
-    Write-Host "New VM deployment completed successfully."
+        Write-Host "New VM deployment completed successfully."
+
+    }
+    catch {
+        Write-Host "VM creation failed due to capacity or configuration issue."
+        Write-Host $_
+    }
 }
 else {
     Write-Host "CPU below threshold. No scaling required."
