@@ -5,7 +5,7 @@
 # ---------------- CONFIGURATION ----------------
 $ResourceGroup = "poonam"
 $PrimaryVM     = "azure"
-$Location      = "eastus"
+$Location      = "CentralIndia"
 $ImageName     = "myCustomImage"
 
 $AdminUser     = "automation"
