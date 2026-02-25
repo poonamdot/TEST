@@ -57,29 +57,31 @@ Write-Host "===================================="
 Write-Host "STEP 3 - CLONE OR PULL REPO ON VM"
 Write-Host "===================================="
 
-$RemoteScript = @'
-$RepoPath = "C:\inetpub\wwwroot"
-$RepoUrl  = "REPLACE_REPO_URL"
+$RemoteScript = @"
+$RepoPath = 'C:\inetpub\wwwroot'
+$RepoUrl  = '$RepoUrl'
+
+if (!(Get-Command git -ErrorAction SilentlyContinue)) {
+    Write-Error 'Git is not installed on this VM.'
+    exit 1
+}
 
 if (!(Test-Path "$RepoPath\.git")) {
     git clone $RepoUrl $RepoPath
-    Write-Host "Repository cloned."
+    Write-Host 'Repository cloned.'
 } else {
     Set-Location $RepoPath
     git reset --hard
     git pull
-    Write-Host "Repository updated."
+    Write-Host 'Repository updated.'
 }
-'@
-
-# Replace placeholder
-$RemoteScript = $RemoteScript -replace "REPLACE_REPO_URL", $RepoUrl
+"@
 
 az vm run-command invoke `
   --resource-group $ResourceGroup `
   --name $PrimaryVM `
   --command-id RunPowerShellScript `
-  --scripts $RemoteScript
+  --scripts @($RemoteScript)
 
 Write-Host "===================================="
 Write-Host "STEP 4 - CHECK CPU"
