@@ -37,7 +37,7 @@ Write-Host "STEP 2 - CHECK / INSTALL GIT ON PRIMARY VM"
 Write-Host "===================================="
 
 $RemoteScript = @'
-Write-Host "Starting Git check/install..."  # Dummy first line
+Write-Host "Starting Git check/install..."  # Safe first line
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
@@ -65,7 +65,7 @@ Write-Host "STEP 3 - CLONE OR PULL REPO ON PRIMARY VM"
 Write-Host "===================================="
 
 $RemoteScript = @"
-Write-Host 'Starting repo deployment...'  # Dummy first line
+Write-Host 'Starting repo deployment...'  # Safe first line
 
 \$RepoPath = '$RepoPath'
 \$RepoUrl  = '$RepoUrl'
@@ -105,7 +105,14 @@ $CPUResult = az vm run-command invoke `
   --scripts "Write-Host 'Measuring CPU usage...'; Get-Counter '\Processor(_Total)\% Processor Time' | Select -ExpandProperty CounterSamples | Select -ExpandProperty CookedValue" `
   --query "value[0].message" -o tsv
 
-$CPU = [int][math]::Round($CPUResult)
+# Convert to float and round
+if ([string]::IsNullOrEmpty($CPUResult)) {
+    $CPU = 0
+} else {
+    $CPUFloat = [float]$CPUResult
+    $CPU = [int][math]::Round($CPUFloat)
+}
+
 Write-Host "Current CPU Usage: $CPU %"
 
 
@@ -133,7 +140,7 @@ if ($CPU -gt $CPUThreshold) {
 
     # Install Git on new VM
     $RemoteScript = @'
-Write-Host "Installing Git on new VM..."  # Dummy first line
+Write-Host "Installing Git on new VM..."  # Safe first line
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 if (!(Get-Command git -ErrorAction SilentlyContinue)) {
@@ -151,7 +158,7 @@ if (!(Get-Command git -ErrorAction SilentlyContinue)) {
 
     # Clone or pull repo on new VM
     $RemoteScript = @"
-Write-Host 'Deploying repo on new VM...'  # Dummy first line
+Write-Host 'Deploying repo on new VM...'  # Safe first line
 
 \$RepoPath = '$RepoPath'
 \$RepoUrl  = '$RepoUrl'
